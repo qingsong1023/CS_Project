@@ -155,7 +155,7 @@ sample_weights = train_data['Finding Labels'].map(calculate_weights).values
 sample_weights /= sample_weights.sum()
 
 # 重采样训练数据，保持测试集独立
-train_data = train_data.sample(10000, weights=sample_weights, random_state=42)
+train_data = train_data.sample(50000, weights=sample_weights, random_state=42)
 print(f"Resampled train data size: {len(train_data)}")
 
 # 创建 'disease_vec' 列（train）
