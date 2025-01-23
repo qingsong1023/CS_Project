@@ -64,7 +64,7 @@ print(f"Add Dense Layers: {'True' if args.add_dense_layers else 'False'}")
 
 # ======================================================================Part 2: The data Preprocess======================================================================
 # 读取 CSV 文件，确保路径正确
-data = pd.read_csv('/home2/grkp39/My_project/Datasets/Data_Entry_2017.csv')   # 替换为实际路径
+data = pd.read_csv('/home2/grkp39/My_project/Datasets/Data_Entry_2017.csv')
 
 # 去除年龄大于100的异常数据并且将年龄数据转换为整数
 data = data[data['Patient Age'] < 100]
@@ -72,7 +72,7 @@ data['Patient Age'] = data['Patient Age'].map(lambda x: int(x))
 
 # 获取图像路径，并存入字典
 data_image_paths = {
-    os.path.basename(x): x for x in glob(os.path.join('/home2/grkp39/My_project/Datasets', 'images*', '*', '*.png'))  # 替换为实际路径
+    os.path.basename(x): x for x in glob(os.path.join('/home2/grkp39/My_project/Datasets', 'images*', '*', '*.png'))
 }
 
 # 将图像路径添加到数据框中同时确保路径为字符串并删除缺失路径的行
@@ -98,7 +98,7 @@ for c_label in all_labels:
 data['disease_vec'] = data[all_labels].values.tolist()
 
 # 加载图像索引
-test_list_path = '/home2/grkp39/My_project/Datasets/test_list.txt'  # 替换为实际路径
+test_list_path = '/home2/grkp39/My_project/Datasets/test_list.txt'
 if not os.path.exists(test_list_path):
     raise FileNotFoundError(f"Test list file not found at {test_list_path}")
 with open(test_list_path, 'r') as f:
@@ -164,7 +164,7 @@ def dataframe_to_dataset(df, model_name, img_size=(224, 224)):
         elif model_name == 'efficientnetB0':
             image = efficientnet_preprocess_input(image)
         else:
-            raise ValueError("Invalid model name. Choose 'densenet121', 'vgg16', 'mobilenetV3Large', 'efficientnetB0', or 'vit'.")
+            raise ValueError("Invalid model name. Choose 'densenet121', 'vgg16', 'mobilenetV3Large', or 'efficientnetB0'.")
         return image, label
     # 构建数据集
     dataset = tf.data.Dataset.from_tensor_slices((paths, labels))
@@ -182,42 +182,31 @@ from keras.layers import Input, Dense, Dropout, Flatten
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 from keras.models import Model
+from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve, auc as auc_score
 # 将数据分为训练、验证和测试集（change using offical test）
 IMG_SIZE = (224, 224, 3)
 img_in = Input(shape=IMG_SIZE)
 if args.model == 'densenet121':
-    base_model = DenseNet121(
-        include_top=False, 
-        weights='imagenet', 
-        input_tensor=img_in, 
-        pooling='avg'
-    )
-
+    base_model = DenseNet121(include_top=False, 
+                             weights='imagenet', 
+                             input_tensor=img_in, 
+                             pooling='avg')
 elif args.model == 'vgg16':
-    base_model = VGG16(
-        include_top=False, 
-        weights='imagenet', 
-        input_tensor=img_in, 
-        pooling='avg'
-    )
-
+    base_model = VGG16(include_top=False, 
+                              weights='imagenet', 
+                              input_tensor=img_in, 
+                              pooling='avg')
 elif args.model == 'mobilenetV3Large':
-    base_model = MobileNetV3Large(
-        include_top=False, 
-        weights='imagenet', 
-        input_tensor=img_in, 
-        pooling='avg'
-    )
-
+    base_model = MobileNetV3Large(include_top=False, 
+                                  weights='imagenet', 
+                                  input_tensor=img_in, 
+                                  pooling='avg')
 elif args.model == 'efficientnetB0':
-    base_model = EfficientNetB0(
-        include_top=False, 
-        weights='imagenet', 
-        input_tensor=img_in, 
-        pooling='avg'
-    )
-
+    base_model = EfficientNetB0(include_top=False, 
+                                weights='imagenet', 
+                                input_tensor=img_in, 
+                                pooling='avg')
 else:
     raise ValueError("Invalid model name. Choose 'densenet121', 'vgg16', 'mobilenetV3Large', or 'efficientnetB0'.")
 
@@ -235,13 +224,16 @@ predictions = Dense(len(all_labels), activation="sigmoid", name="predictions")(x
 model = Model(inputs=img_in, outputs=predictions)
 
 # 优化器
-if args.model == 'vit':
-    optimizer = Adam(
-        learning_rate=args.learning_rate,
-        weight_decay=0.0001  # 添加权重衰减
-    )
-else:
-    optimizer = Adam(learning_rate=args.learning_rate)
+optimizer = Adam(learning_rate=args.learning_rate)
+# 修改损失函数为focal loss
+def focal_loss(gamma=2., alpha=.25):
+    def focal_loss_fixed(y_true, y_pred):
+        pt_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
+        pt_0 = tf.where(tf.equal(y_true, 0), y_pred, tf.zeros_like(y_pred))
+        return -tf.reduce_mean(alpha * tf.pow(1. - pt_1, gamma) * tf.math.log(pt_1 + tf.keras.backend.epsilon())) - \
+               tf.reduce_mean((1-alpha) * tf.pow(pt_0, gamma) * tf.math.log(1. - pt_0 + tf.keras.backend.epsilon()))
+    return focal_loss_fixed
+
 # 编译模型
 model.compile(
     optimizer=optimizer, 
@@ -254,22 +246,82 @@ model.compile(
 
 
 # ======================================================================Part 5 Training and Testing======================================================================
-# 数据增强
-datagen = ImageDataGenerator(
-    rotation_range=20,
-    width_shift_range=0.2,
-    height_shift_range=0.2,
-    horizontal_flip=True,
-    fill_mode='nearest'
-)
+# 计算类别权重
+def calculate_class_weights(y_train):
+    weights = []
+    for i in range(y_train.shape[1]):
+        neg, pos = np.bincount(y_train[:, i].astype(int))
+        weight = (1 / pos) * (len(y_train) / 2.0) if pos > 0 else 0
+        weights.append(weight)
+    return np.array(weights)
+# 计算类别权重
+class_weights = calculate_class_weights(train_data[all_labels].values)
+
+# 修改数据生成器部分
+class CustomDataGenerator(tf.keras.utils.Sequence):
+    def __init__(self, dataframe, x_col, y_col, batch_size, target_size, class_weights, is_training=False):
+        self.dataframe = dataframe
+        self.x_col = x_col
+        self.y_col = y_col
+        self.batch_size = batch_size
+        self.target_size = target_size
+        self.class_weights = class_weights
+        self.is_training = is_training
+        self.indexes = np.arange(len(self.dataframe))
+        
+        # 数据增强配置
+        self.datagen = ImageDataGenerator(
+            rotation_range=10,
+            width_shift_range=0.1,
+            height_shift_range=0.1,
+            horizontal_flip=False,
+            vertical_flip=False,
+            zoom_range=0.15,
+            fill_mode='constant',
+            cval=0,
+            brightness_range=[0.9,1.1]
+        ) if is_training else None
+    
+    def __len__(self):
+        return int(np.ceil(len(self.dataframe) / self.batch_size))
+    
+    def __getitem__(self, idx):
+        batch_indexes = self.indexes[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_df = self.dataframe.iloc[batch_indexes]
+        
+        # 加载和预处理图像
+        X = np.array([
+            tf.image.resize(
+                tf.image.decode_png(tf.io.read_file(path), channels=3),
+                self.target_size[:2]
+            ) for path in batch_df[self.x_col]
+        ])
+        
+        # 如果是训练模式，应用数据增强
+        if self.is_training:
+            X = np.stack([
+                self.datagen.random_transform(img) for img in X
+            ])
+        
+        # 获取标签
+        y = np.array(batch_df[self.y_col].values.tolist())
+        
+        # 计算样本权重
+        sample_weights = np.sum(y * self.class_weights, axis=1)
+        sample_weights = sample_weights / np.mean(sample_weights)  # 归一化权重
+        
+        return X, y, sample_weights
 
 # 创建训练、验证和测试集的数据集
 batch_size = args.batch_size
-train_ds = datagen.flow_from_dataframe(
-    dataframe=train_data, 
-    directory=None, x_col='path', 
-    y_col=all_labels, target_size=(224, 224), 
-    batch_size=batch_size, class_mode='raw'
+train_ds = CustomDataGenerator(
+    dataframe=train_data,
+    x_col='path',
+    y_col=all_labels,
+    batch_size=batch_size,
+    target_size=(224, 224),
+    class_weights=class_weights,
+    is_training=True
 )
 valid_ds = dataframe_to_dataset(valid_data, model_name=args.model).batch(batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)
 test_ds = dataframe_to_dataset(test_data, model_name=args.model).batch(batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)

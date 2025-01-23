@@ -7,24 +7,18 @@ conda activate basemodels:
 进入该虚拟环境
 
 2：
-conda search cudatoolkit 和 conda search cudnn:
 检查可下载的cudnn和cuda版本号，我这里下载的是cudnn==8.2.1和cudatoolkit==11.3.1
-
-conda install cudnn==8.2.1: 
-下载8.2.1的cuda和11.3.1的cudatoolkit
-
-conda list: 
-检查是否下载完成
 
 3：
 pip install tensorflow-gpu==2.10.0: 
 然后下载tensorflow版本2.10.0
 
-4:
-pip install numpy==1.26.4: 
-由于版本不兼容可能需要重新下载一下numpy
-
-5：
+4：
 下载其他的需要的安装包...
-
+numpy(numpy==1.26.4), 
+pandas(pandas==2.2.3), 
+seaborn(seaborn==0.13.2), 
+matplotlib(matplotlib==3.5.3), 
+scikit-learn(scikit-learn==1.6.0), 
+transformers(transformers==4.26.1)
 
