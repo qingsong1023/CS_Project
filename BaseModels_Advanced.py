@@ -238,9 +238,10 @@ def focal_loss(gamma=2., alpha=.25):
 model.compile(
     optimizer=optimizer, 
     loss='binary_crossentropy', 
-    metrics=[tf.keras.metrics.BinaryAccuracy(name='binary_accuracy'), 
-             tf.keras.metrics.AUC(name='AUC', multi_label=True, num_labels=len(all_labels))
-             ]
+    metrics=[
+        tf.keras.metrics.BinaryAccuracy(name='accuracy'),
+        tf.keras.metrics.AUC(name='auc', multi_label=True)  # 确保使用多标签AUC
+    ]
 )
 
 
@@ -251,10 +252,12 @@ def calculate_class_weights(y_train):
     weights = []
     for i in range(y_train.shape[1]):
         neg, pos = np.bincount(y_train[:, i].astype(int))
-        weight = (1 / pos) * (len(y_train) / 2.0) if pos > 0 else 0
+        if pos > 0:
+            weight = (1 / pos) * (len(y_train) / 2.0)
+        else:
+            weight = 1  # 默认权重
         weights.append(weight)
     return np.array(weights)
-# 计算类别权重
 class_weights = calculate_class_weights(train_data[all_labels].values)
 
 # 修改数据生成器部分
@@ -374,8 +377,8 @@ axes[0].legend(fontsize=12)
 axes[0].xaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
 # 绘制训练和验证准确率
-axes[1].plot(history.history['binary_accuracy'], label='Training Accuracy', color='b', linewidth=2)
-axes[1].plot(history.history['val_binary_accuracy'], label='Validation Accuracy', color='r', linewidth=2)
+axes[1].plot(history.history['accuracy'], label='Training Accuracy', color='b', linewidth=2)
+axes[1].plot(history.history['val_accuracy'], label='Validation Accuracy', color='r', linewidth=2)
 axes[1].set_xlabel('Epochs', fontsize=14)
 axes[1].set_ylabel('Accuracy', fontsize=14)
 axes[1].set_title('Training and Validation Accuracy', fontsize=16)
@@ -383,8 +386,8 @@ axes[1].legend(fontsize=12)
 axes[1].xaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
 # 绘制训练和验证AUC
-axes[2].plot(history.history['AUC'], label='Training AUC', color='b', linewidth=2)
-axes[2].plot(history.history['val_AUC'], label='Validation AUC', color='r', linewidth=2)
+axes[2].plot(history.history['auc'], label='Training AUC', color='b', linewidth=2)
+axes[2].plot(history.history['val_auc'], label='Validation AUC', color='r', linewidth=2)
 axes[2].set_xlabel('Epochs', fontsize=14)
 axes[2].set_ylabel('AUC', fontsize=14)
 axes[2].set_title('Training and Validation AUC', fontsize=16)
@@ -397,24 +400,33 @@ plt.show()
 
 # 加载并测试最佳模型
 model.load_weights(checkpoint_filepath)  # 只加载最优权重
-loss, auc, accuracy = model.evaluate(test_ds, steps=test_steps)
-print(f'Test Loss: {loss:.4f}, Test Accuracy: {accuracy:.4f}, Test AUC: {auc:.4f}')
+test_results = model.evaluate(test_ds, steps=test_steps)
+print(f'Test Loss: {test_results[0]:.4f}')
+print(f'Test Accuracy: {test_results[1]:.4f}')
+print(f'Test AUC: {test_results[2]:.4f}')
 
 # 预测并绘制每个类别的ROC曲线
 predictions = model.predict(test_ds, steps=test_steps)
 plt.figure(figsize=(12, 10))
+aucs = []  # 存储每个类别的AUC值
+
 for i, label in enumerate(all_labels):
     true_labels = test_data[label].values
     pred_probs = predictions[:, i]
-    true_labels = np.array(true_labels, dtype=np.int32)
     fpr, tpr, _ = roc_curve(true_labels, pred_probs)
     roc_auc = auc_score(fpr, tpr)
+    aucs.append(roc_auc)
     plt.plot(fpr, tpr, lw=2, label=f'{label} (AUC: {roc_auc:.2f})')
+
+# 计算并打印平均AUC
+mean_auc = np.mean(aucs)
+print(f'Mean AUC across all classes: {mean_auc:.4f}')
+
 plt.plot([0, 1], [0, 1], linestyle='--', lw=2, color='r', alpha=0.8)
 plt.xlabel('False Positive Rate')
 plt.ylabel('True Positive Rate')
-plt.title('Receiver Operating Characteristic (ROC) Curves for Each Disease Label')
-plt.legend(loc='lower right')
+plt.title(f'ROC Curves for Each Disease Label (Mean AUC: {mean_auc:.2f})')
+plt.legend(loc='lower right', bbox_to_anchor=(1.7, 0))
 plt.tight_layout()
 plt.savefig(os.path.join(vis_dir, f'roc_curves_{args.model}.png'), dpi=300, bbox_inches='tight')
 plt.show()
