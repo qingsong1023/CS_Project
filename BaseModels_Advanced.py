@@ -422,6 +422,7 @@ for i, label in enumerate(all_labels):
 mean_auc = np.mean(aucs)
 print(f'Mean AUC across all classes: {mean_auc:.4f}')
 
+plt.figure(figsize=(8, 8))
 plt.plot([0, 1], [0, 1], linestyle='--', lw=2, color='r', alpha=0.8)
 plt.xlabel('False Positive Rate')
 plt.ylabel('True Positive Rate')
